@@ -1,0 +1,9 @@
+name = S12Q
+description = S12 wholesaller quantity
+core = 7.x
+dependencies[] = commerce
+dependencies[] = commerce_price
+dependencies[] = commerce_extra_quantity
+
+package = Commerce (Contrib)
+; Information added by drupal.org packaging script on 2012-04-08

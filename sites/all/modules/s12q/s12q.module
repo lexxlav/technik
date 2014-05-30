@@ -1,0 +1,133 @@
+<?php
+
+/**
+ * @file
+ * Defines the additional price formatters for Drupal Commerce
+ */
+
+/**
+ * Implements hook_form_alter().
+ */
+function s12q_form_alter(&$form, &$form_state, $form_id) {
+  global $user;
+    // CHANGE HERE! wholesaller role ID
+  if (isset($user->roles[4])) {
+      // Add to cart form from field api
+    if (preg_match('/^commerce_cart_add_to_cart_form_/', $form_id)) {
+        // CHANGE HERE! "field_wc_v_upakovke" to your field ID with wholesaller quantity
+      if (!empty($form_state['default_product']->field_wc_v_upakovke[LANGUAGE_NONE][0]['value']) and isset($form['quantity']) && $form['quantity']['#type'] == 'textfield') {
+        $form['quantity']['#default_value'] = $form_state['default_product']->field_wc_v_upakovke[LANGUAGE_NONE][0]['value'];
+        $form['#validate'][] = 's12q_form_validate';
+        $form['quantity']['#theme_wrappers'] = array('s12q_quantity_plusminus_wrapper', 'form_element');
+        $form['#attached']['js'] = array();
+        $form['#attached']['js'][] = drupal_get_path('module', 's12q') . '/s12q.js';
+      }
+    }
+    
+      // Quantity fields from views
+    if ($form_id == 'views_form_commerce_cart_form_default') {
+      if (isset($form['edit_quantity'])) {
+        $form['#attached']['js'] = array();
+        $form['#attached']['js'][] = drupal_get_path('module', 's12q') . '/s12q.js';
+        $form['#validate'][] = 's12q_form_views_validate';
+        foreach ($form['edit_quantity'] as $key => $value) {
+          if (is_numeric($key) && drupal_substr($key, 0, 1) != '#' && is_array($value)) {
+            $form['edit_quantity'][$key]['#theme_wrappers'] = array('s12q_quantity_plusminus_wrapper', 'form_element');
+          }
+        }
+      }
+    }
+  }
+
+}
+
+/**
+ * Implements hook_theme().
+ */
+function s12q_theme($existing, $type, $theme, $path) {
+  return array(
+    's12q_quantity_plusminus_wrapper' => array(
+      'render element' => 'form',
+    ),
+    's12q_quantity_plusminus_link' => array(
+      'variables' => array('way' => NULL, 'quantity' => NULL, 'quantity_input_element' => NULL, 'q' => NULL),
+    ),
+  );
+}
+
+/**
+ * Returns HTML for quantity textfield having links wrapping the textfield.
+ */
+function theme_s12q_quantity_plusminus_wrapper($variables) {
+    // form from views - retrive correct default value
+  if ($variables['form']['#name'] != 'quantity') {
+    if (!empty($variables['form']['#line_item_id'])) {
+      $line_item = commerce_line_item_load($variables['form']['#line_item_id']);
+      if (!empty($line_item->commerce_product[LANGUAGE_NONE][0]['product_id'])) {
+        $product = commerce_product_load($line_item->commerce_product[LANGUAGE_NONE][0]['product_id']);
+          // CHANGE HERE! "field_wc_v_upakovke" to your field ID with wholesaller quantity
+        if (!empty($product->field_wc_v_upakovke[LANGUAGE_NONE][0]['value'])) {
+          $variables['form']['#default_value'] = $product->field_wc_v_upakovke[LANGUAGE_NONE][0]['value'];
+        }
+      }
+    }
+  }
+  $decrease = theme('s12q_quantity_plusminus_link', array('way' => COMMERCE_EXTRA_QUANTITY_DECREASE, 'quantity' => $variables['form']['#value'], 'quantity_input_element' => $variables['form']['#id'], 'q' => $variables['form']['#default_value']));
+  $increase = theme('s12q_quantity_plusminus_link', array('way' => COMMERCE_EXTRA_QUANTITY_INCREASE, 'quantity' => $variables['form']['#value'], 'quantity_input_element' => $variables['form']['#id'], 'q' => $variables['form']['#default_value']));
+  return $decrease . $variables['form']['#children'] . $increase;
+}
+
+/**
+ * Returns HTML for link which increases/decreases quantity value.
+ */
+function theme_s12q_quantity_plusminus_link($variables) {
+  switch ($variables['way']) {
+    case COMMERCE_EXTRA_QUANTITY_DECREASE:
+      $text = '-';
+      $class = 'commerce-quantity-plusminus-link-decrease';
+      $js_callback = "Drupal.s12q('#" . $variables['quantity_input_element'] . "', " . $variables['way'] . ", " . $variables['q'] . ")";
+      break;
+    case COMMERCE_EXTRA_QUANTITY_INCREASE:
+      $text = '+';
+      $class = 'commerce-quantity-plusminus-link-increase';
+      $js_callback = "Drupal.s12q('#" . $variables['quantity_input_element'] . "', " . $variables['way'] . ", " . $variables['q'] . ")";
+      break;
+  }
+  if ($variables['quantity'] <= 1) {
+    $class .= ' commerce-quantity-plusminus-link-disabled';
+  }
+  $options = array(
+    'attributes' => array('class' => 'button', 'onclick' => $js_callback . '; return false;'),
+    'html' => FALSE,
+  );
+  $element = array(
+    '#theme' => 'link',
+    '#text' => $text,
+    '#path' => current_path(),
+    '#options' => $options,
+    '#prefix' => '<span class="commerce-quantity-plusminus-link ' . $class . '">',
+    '#suffix' => '</span>',
+  );
+  return render($element);
+}
+
+function s12q_form_validate($form, &$form_state) {
+  if ($form_state['values']['quantity'] % $form['quantity']['#default_value'] != 0) {
+    form_set_error('', 'Количество должно быть кратным количеству в упаковке (' . $form['quantity']['#default_value'] . ')');
+  }
+}
+
+function s12q_form_views_validate($form, &$form_state) {
+  foreach ($form_state['values']['edit_quantity'] as $key => $quantity) {
+    if (!empty($form['edit_quantity'][$key]['#line_item_id'])) {
+      $line_item = commerce_line_item_load($form['edit_quantity'][$key]['#line_item_id']);
+      if (!empty($line_item->commerce_product[LANGUAGE_NONE][0]['product_id'])) {
+        $product = commerce_product_load($line_item->commerce_product[LANGUAGE_NONE][0]['product_id']);
+          // CHANGE HERE! "field_wc_v_upakovke" to your field ID with wholesaller quantity
+        if (!empty($product->field_wc_v_upakovke[LANGUAGE_NONE][0]['value']) and $quantity % $product->field_wc_v_upakovke[LANGUAGE_NONE][0]['value'] != 0) {
+          form_set_error('edit_quantity]['. $key, 'Количество должно быть кратным количеству в упаковке (' . $product->field_wc_v_upakovke[LANGUAGE_NONE][0]['value'] . ')');
+        }
+      }
+    }
+  }
+}
